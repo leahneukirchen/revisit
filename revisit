@@ -1,0 +1,94 @@
+#!/usr/bin/env ruby
+# revisit - list or update interval timestamps
+#
+#  -p  list past (default)
+#  -a  list all
+#  -b  bump
+#
+# Syntax:
+# YYYY-MM-DD/P<duration> - bumping extends date until duration is in the future
+# YYYY-MM-DD/+<duration> - bumping sets date to today
+# <duration> can use years (Y), months (M), weeks (W), days (D)
+# prefixed by a positive number, e.g. 6W1D
+#
+# Written by Leah Neukirchen <leah@vuxu.org>.
+# revisit is in the public domain.
+#
+# To the extent possible under law, the creator of this work has waived
+# all copyright and related or neighboring rights to this work.
+# http://creativecommons.org/publicdomain/zero/1.0/
+
+require 'date'
+require 'optparse'
+
+TODAY = if ENV["SOURCE_DATE_EPOCH"]
+          Time.at(ENV["SOURCE_DATE_EPOCH"].to_i).to_date
+        else
+          Date.today
+        end
+
+params = ARGV.getopts("abp")
+mode = case
+       when params["b"]; :bump
+       when params["a"]; :all
+       else              :past
+       end
+
+def incr_duration(date, duration)
+  date = date.next_year($1.to_i)     if duration =~ /(\d+)Y/
+  date = date.next_month($1.to_i)    if duration =~ /(\d+)M/
+  date = date.next_day(7 * $1.to_i)  if duration =~ /(\d+)W/
+  date = date.next_day($1.to_i)      if duration =~ /(\d+)D/
+
+  date
+end
+
+ARGF.each { |line|
+  line.gsub!(/\b(\d\d\d\d)-(\d\d)-(\d\d)\/([P+])([\dYMDW]+)\b/) {
+    year, month, day, sigil, duration, all = $1.to_i, $2.to_i, $3.to_i, $4, $5, $&
+
+    if duration !~ /\A(\d[YMDW])+\z/
+      warn "can't parse duration: #{duration}"
+    end
+
+    date = Date.new(year, month, day)
+    stop = incr_duration(date, duration)
+
+    if mode == :all || (mode == :past && stop <= TODAY)
+      puts "#{line.chomp} {#{"%+d" % (TODAY-stop)}D}"
+      break
+    end
+
+    if stop <= TODAY  # past duration
+      date = sigil == "+" ? TODAY : stop
+
+      loop {
+        new_date = incr_duration(date, duration)
+
+        if new_date == date
+          break  # zero interval
+        elsif new_date > TODAY
+          break  # duration hasn't passed
+        else
+          date = new_date
+        end
+      }
+    end
+
+    date.strftime("%Y-%m-%d") + "/" + sigil + duration
+  }
+  puts line  if mode == :bump
+}
+
+
+# 2021-07-27/P1M
+# 2021-07-27/+1M
+# 2021-01-01/P1W
+# 2021-01-01/P1M
+# 2021-01-01/+1M
+# z2021-01-01/+1M
+# 2021-01-01/+1M, bar
+
+# 2021-01-01/P3M
+# 2021-02-01/P3M
+# 2021-08-06/P3M

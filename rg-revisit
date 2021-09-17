@@ -1,0 +1,5 @@
+#!/bin/sh
+# rg-revisit - recursively search for revisit notes
+
+rg --no-messages --line-number '\b(19|20)\d\d-\d\d-\d\d/[P+][\dYMDW]+\b' "$@" |
+	revisit
